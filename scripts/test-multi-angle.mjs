@@ -152,6 +152,36 @@ check('variant 5 cameraAngle (alias normalized)', variants[4]?.cameraAngle, 'low
 checkNull('variant 6 cameraAngle (unknown)', variants[5]?.cameraAngle)
 checkNull('variant 7 cameraAngle (b_roll)', variants[6]?.cameraAngle)
 
+console.log('\n5. Backward compatibility: shot without Camera angle: yields null')
+
+// No "Camera angle:" line in the script → the planner stores null on the
+// shot and forwards null on the variant. The keyframe queue (in
+// GenerateWorkspace.jsx, not exercisable here without React) then falls
+// back to the cast entry's primary assetId — the legacy behavior.
+const NO_ANGLE_SCRIPT = `
+Scene 1: Opening
+
+Shot 1: Wide establishing
+Start at: 0:00
+Shot type: performance_wide
+Artist: rose
+Keyframe prompt: Singer leans against a neon-lit phone booth.
+Motion prompt: Slow push-in on the singer.
+Camera: Slow dolly forward, eye level, 35mm lens.
+Length: 4.5
+`
+const noAngleScenes = parseStructuredDirectorScript(NO_ANGLE_SCRIPT, {
+  takesPerAngle: 1,
+  targetDurationSeconds: 30,
+  variationSeed: 0,
+  styleNotes: '',
+})
+const noAngleShot = noAngleScenes?.[0]?.shots?.[0] || null
+check('no-angle shot exists', noAngleShot != null, true)
+checkNull('no-angle shot.angle', noAngleShot?.angle)
+const noAngleVariants = flattenYoloPlanVariants(noAngleScenes)
+checkNull('no-angle variant.cameraAngle', noAngleVariants?.[0]?.cameraAngle)
+
 console.log('')
 if (failures === 0) {
   console.log('All checks passed.')
