@@ -314,6 +314,39 @@ The **Generate** tab offers workflow-based generation with a job queue and progr
 
 **Extend from timeline frame:** Park the playhead on a video or image clip, then right-click the preview → **Extend with AI** or **Starting keyframe for AI**. The frame at the playhead (topmost clip) is captured and sent to the Generate tab; the app switches to Generate with that frame as input. Choose **Image to Video (LTX2)** or **Image to Video (WAN 2.2)**, enter a prompt, and queue. Uses `frameForAIStore` and `captureTimelineFrame`; jobs can use `inputFromTimelineFrame` so the following clip is not pushed (no ripple).
 
+## Multi-Angle Reference (per-shot camera angle)
+
+The **Multiple Angles (Characters / Scenes)** workflows generate 8 camera-angle variants of a single reference image. Each output is registered as its own asset and the cast entry carries a per-angle reference map so the keyframe queue can pick the right image per shot.
+
+**8 angle slugs** (in `src/utils/multiAngle.js`):
+- `close_up`, `wide_shot`, `45_right`, `90_right`, `90_left`, `45_left`, `aerial_view`, `low_angle`
+
+**Asset import:** The multi-angles workflow's 8 outputs are saved with prefixes like `ComfyStudio-close_up_…png`. On import, the asset name becomes `<prefix>_<angle_slug>` (e.g. `rose_close_up`) and the slug is recorded in `asset.peopleWizard.angle`.
+
+**Cast schema:** The wizard saves a cast entry as `{ id, slug, label, assetId, role, angles: { close_up: 'id1', wide_shot: 'id2', … } }`. `assetId` is the character portrait (original selected / generated image or the first available angle). Legacy entries without `angles` still work — the queue falls back to `assetId`.
+
+**Director script grammar:** A new optional field per shot:
+
+```
+Shot 1: Wide establishing
+Start at: 0:00
+Shot type: performance_wide
+Artist: rose
+Camera angle: wide_shot        ← enum-typed, picks the per-cast reference image
+Keyframe prompt: …
+Motion prompt: …
+Camera: Slow dolly forward, 35mm lens.
+Length: 4.5
+```
+
+Free-form aliases (`CU`, `side`, `behind`, `45° right`) are normalized via `CAMERA_ANGLE_ALIASES` in `src/utils/yoloPlanning.js`. Unknown values produce a null angle and the queue falls back to the cast's `assetId`.
+
+**LLM brief:** `buildMusicVideoLLMPrompt` lists the 8 slugs and rule 11 requires `Camera angle:` on every performance / performance_wide shot with a visible cast member.
+
+**Keyframe queue:** `buildMusicVideoPlanFromScript` resolves each cast member's slot via `member.angles[shot.angle] || member.assetId`. The result is forwarded to Qwen Image Edit as the single-character reference image, so each keyframe shows the character from the requested angle instead of always front-facing.
+
+**Optional 4×2 contact sheet:** The composite preview is no longer auto-built. Users can still create it manually from the job card ("Create Angle Sheet" button) for visual reference.
+
 ## Text Panel Features
 - Text content textarea
 - Font family dropdown (10 fonts)
