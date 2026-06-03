@@ -1805,6 +1805,9 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
     // Main image handling:
     // - default workflows: set main LoadImage from inputImage
     // - model/product workflow: map dedicated loaders from model + product refs
+    // - empty inputImage: leave the LoadImage untouched so the workflow
+    //   can run as a pure t2i / text-driven render (used by env + detail
+    //   b-roll where no performer is in frame).
     if (cls === 'LoadImage' && node.inputs && 'image' in node.inputs) {
       if (hasDedicatedModelAndProductLoaders) {
         if (/load\s*model/i.test(title)) {
@@ -1816,7 +1819,7 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
         } else if (inputImage) {
           node.inputs.image = inputImage
         }
-      } else {
+      } else if (inputImage) {
         node.inputs.image = inputImage
       }
     }

@@ -9091,9 +9091,20 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       )
       return { primaryAssetId, secondaryAssetId }
     }
+    // Environmental b-roll (and detail b-roll) carry no performer in frame
+    // per the LLM brief rules 4a/4b. We treat them as b-roll-without-
+    // reference so the queue doesn't fall back to a default cast image
+    // and accidentally render the character into a "no people" shot.
+    // The variant.coverage.type string is set by the planner from the
+    // director script's "Coverage type:" line.
+    const isBrollWithoutPerformer = (variant) => {
+      const coverageType = String(variant?.coverage?.type || '').trim().toLowerCase()
+      return coverageType === 'environmental_broll' || coverageType === 'detail_broll'
+    }
     if (usesReferenceMusicStoryboardWorkflow) {
       const missingReference = variantsToQueue.some((variant) => (
-        !resolveQwenMusicStoryboardReferences(variant).primaryAssetId
+        !isBrollWithoutPerformer(variant)
+        && !resolveQwenMusicStoryboardReferences(variant).primaryAssetId
       ))
       if (missingReference) {
         setFormError(`${usesCustomMusicStoryboardWorkflow ? 'Custom keyframe workflows' : 'Qwen Image Edit'} need a cast/reference image. Add at least one person in the Music Video People step, or switch keyframes to Nano Banana 2.`)
@@ -9132,6 +9143,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const qwenMusicReferences = usesReferenceMusicStoryboardWorkflow
         ? resolveQwenMusicStoryboardReferences(variant)
         : { primaryAssetId: null, secondaryAssetId: null }
+      // B-roll without a performer in frame (environmental / detail
+      // coverage) skips the cast reference entirely — the prompt drives
+      // the result, no person anchor. shot.angle is still recorded in
+      // the variant (Camera angle: line is preserved through the
+      // planner) but the keyframe queue never feeds a character image
+      // into the Qwen / custom keyframe workflow for these shots.
+      const variantIsBrollNoPerformer = isBrollWithoutPerformer(variant)
       const usesNanoBananaMusicOverride = isYoloMusicMode &&
         ['nano-banana-2', 'nano-banana-pro'].includes(yoloStoryboardWorkflowId) &&
         Boolean(variant?.nanoBananaReferenceOverride?.enabled)
@@ -9142,20 +9160,24 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         : []
       const musicReferenceAssetId1 = isYoloMusicMode
         ? (
-          usesReferenceMusicStoryboardWorkflow
-            ? qwenMusicReferences.primaryAssetId
-            : usesNanoBananaMusicOverride
-              ? (nanoBananaOverrideAssetIds[0] || null)
-            : (variant.resolvedArtistAssetIds?.[0] || yoloMusicArtistAsset?.id || null)
+          variantIsBrollNoPerformer
+            ? null
+            : usesReferenceMusicStoryboardWorkflow
+              ? qwenMusicReferences.primaryAssetId
+              : usesNanoBananaMusicOverride
+                ? (nanoBananaOverrideAssetIds[0] || null)
+              : (variant.resolvedArtistAssetIds?.[0] || yoloMusicArtistAsset?.id || null)
         )
         : null
       const musicReferenceAssetId2 = isYoloMusicMode
         ? (
-          usesReferenceMusicStoryboardWorkflow
-            ? qwenMusicReferences.secondaryAssetId
-            : usesNanoBananaMusicOverride
-              ? (nanoBananaOverrideAssetIds[1] || null)
-            : (variant.resolvedArtistAssetIds?.[1] || null)
+          variantIsBrollNoPerformer
+            ? null
+            : usesReferenceMusicStoryboardWorkflow
+              ? qwenMusicReferences.secondaryAssetId
+              : usesNanoBananaMusicOverride
+                ? (nanoBananaOverrideAssetIds[1] || null)
+              : (variant.resolvedArtistAssetIds?.[1] || null)
         )
         : null
       const musicInputAsset = usesReferenceMusicStoryboardWorkflow && musicReferenceAssetId1
