@@ -182,6 +182,48 @@ checkNull('no-angle shot.angle', noAngleShot?.angle)
 const noAngleVariants = flattenYoloPlanVariants(noAngleScenes)
 checkNull('no-angle variant.cameraAngle', noAngleVariants?.[0]?.cameraAngle)
 
+console.log('\n6. Environmental b-roll: coverage.type is propagated, shot.angle still recorded')
+
+// The planner must forward the coverage type so the queue can detect
+// "no performer in frame" shots. Camera angle is still recorded on
+// the shot (so per-angle reference data flows through) but the queue
+// ignores it for env b-roll (the isBrollWithoutPerformer check).
+const ENV_BROLL_SCRIPT = `
+Coverage 1: Environment
+Coverage type: environmental_broll
+Coverage label: Environment
+
+Scene 1: City
+
+Shot 1: Empty street at night
+Start at: 0:00
+Shot type: b_roll
+Keyframe prompt: Rain-slick alley at night, sodium streetlamp haloing the wet pavement, no people in frame.
+Motion prompt: Slow drift along the alley, puddles rippling.
+Camera: Slow dolly, 35mm.
+Length: 4
+`
+const envScenes = parseStructuredDirectorScript(ENV_BROLL_SCRIPT, {
+  takesPerAngle: 1,
+  targetDurationSeconds: 30,
+  variationSeed: 0,
+  styleNotes: '',
+})
+const envScene = envScenes?.[0]
+const envShot = envScene?.shots?.[0] || null
+check('env-broll shot exists', envShot != null, true)
+check('env-broll scene coverage.type', envScene?.coverageType, 'environmental_broll')
+const envVariants = flattenYoloPlanVariants(envScenes)
+const envVariant = envVariants?.[0] || null
+check('env-broll variant.coverage.type', envVariant?.coverage?.type, 'environmental_broll')
+check('env-broll variant.coverage.label', envVariant?.coverage?.label, 'Environment')
+checkNull('env-broll variant.cameraAngle (no angle line in script)', envVariant?.cameraAngle)
+// The variant doesn't carry the canonical `shotType` field; the script's
+// `Shot type: b_roll` lands in `angle` because the planner flattens each
+// shot to 1 angle × 1 take. That's enough for the queue's
+// isBrollWithoutPerformer check (which only reads coverage.type).
+check('env-broll variant.angle (script Shot type: b_roll)', envVariant?.angle, 'b_roll')
+
 console.log('')
 if (failures === 0) {
   console.log('All checks passed.')
