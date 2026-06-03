@@ -30,6 +30,7 @@ import {
   getMusicVideoShotTypeOption,
   normalizeCastSlug,
 } from '../../config/musicVideoShotConfig'
+import { isMultiAngleSlug } from '../../utils/multiAngle'
 import {
   getWorkflowDisplayLabel,
 } from '../../config/generateWorkspaceConfig'
@@ -1686,12 +1687,27 @@ export default function MusicVideoEasyMode({
         ? peopleWizardGeneratedImageAsset?.id || ''
       : peopleWizardSelectedAsset?.id || peopleWizardSheetAsset?.id || peopleWizardGeneratedImageAsset?.id || ''
     if (!trimmedName || !normalizedSlug || !finalAssetId) return
+    // Collect any per-angle assets the wizard produced. They share the same
+    // wizardId and carry a peopleWizard.angle slug set by the multi-angles
+    // asset import. We group them into a map keyed by angle slug so the
+    // keyframe queue can pick the right one per shot.
+    const castAngles = {}
+    if (peopleWizard.sessionId) {
+      for (const asset of imageAssets) {
+        if (asset?.peopleWizard?.wizardId !== peopleWizard.sessionId) continue
+        const angle = String(asset?.peopleWizard?.angle || '').toLowerCase()
+        if (isMultiAngleSlug(angle) && asset.id) castAngles[angle] = asset.id
+      }
+    }
     const nextEntry = {
       id: peopleWizard.entryId || `cast-${Date.now()}`,
       label: trimmedName,
       slug: normalizedSlug,
       assetId: finalAssetId,
       role: String(peopleWizard.role || 'lead'),
+      // Empty object when the user never ran the multi-angles wizard;
+      // keyframe queue will fall back to assetId.
+      angles: castAngles,
     }
     setYoloMusicCast((prev) => {
       const list = Array.isArray(prev) ? [...prev] : []

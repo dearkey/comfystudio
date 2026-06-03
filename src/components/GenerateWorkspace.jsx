@@ -127,6 +127,7 @@ import {
   SHORT_FILM_KEYFRAME_WORKFLOW_OPTIONS,
   SHORT_FILM_VIDEO_WORKFLOW_ID,
 } from '../config/shortFilmConfig'
+import { extractMultiAngleSlugFromFilename, isMultiAngleSlug } from '../utils/multiAngle'
 
 const CATEGORY_ICONS = { video: Video, image: ImageIcon, audio: Music }
 const DIRECTOR_SUBTABS = [
@@ -701,31 +702,9 @@ async function appendAssetToProjectFile(projectHandle, asset, folderPathSegments
   return persistedAsset
 }
 
-// Slugs for the 8 outputs of the 1_click_multiple_angles / _scene workflows.
-// Order mirrors the saveNodes map in comfyui.js#modifyMultipleAnglesWorkflow
-// so the angle can be recovered from the filename prefix returned by ComfyUI.
-const MULTI_ANGLE_SLUGS = Object.freeze([
-  'close_up',
-  'wide_shot',
-  '45_right',
-  '90_right',
-  '90_left',
-  '45_left',
-  'aerial_view',
-  'low_angle',
-])
-
-// Pulls the angle slug out of a ComfyUI image filename like
-// "ComfyStudio-close_up_00001_.png" → "close_up". Returns null if the
-// filename doesn't match one of the known multi-angle slugs.
-function extractMultiAngleSlugFromFilename(filename) {
-  const basename = String(filename || '').split(/[\\/]/).pop() || ''
-  if (!basename) return null
-  const match = basename.match(/-([a-z][a-z0-9_]+?)_\d+_/i)
-  if (!match) return null
-  const slug = match[1].toLowerCase()
-  return MULTI_ANGLE_SLUGS.includes(slug) ? slug : null
-}
+// Slugs for the 8 outputs of the 1_click_multiple_angles / _scene workflows
+// live in src/utils/multiAngle.js so the asset import, cast schema, planner
+// and LLM brief can all share one definition.
 
 function getDirectorAngleShortToken(angle = '') {
   const normalized = String(angle || '').trim().toLowerCase()
@@ -5269,20 +5248,39 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // Resolved cast: hydrate each entry's assetId to a real image asset so the
   // planner can read label/slug/assetId uniformly. Entries with missing
   // assets are dropped (they show up as "unset" rows in the UI).
+  //
+  // When the entry was created by the people-wizard's multi-angles pass it
+  // also carries an `angles` map keyed by the 8 angle slugs (close_up,
+  // wide_shot, …). We only keep entries whose asset still exists; angle
+  // entries whose asset was deleted are filtered out so the keyframe queue
+  // doesn't pick a stale id and falls back to the entry's primary assetId.
   const yoloMusicResolvedCast = useMemo(() => {
     if (!Array.isArray(yoloMusicCast)) return []
+    const imageAssetById = new Map(
+      (assets || [])
+        .filter((asset) => asset?.type === 'image' && asset?.id)
+        .map((asset) => [asset.id, asset])
+    )
     return yoloMusicCast
       .map((entry) => {
-        const asset = assets.find((a) => a?.id === entry?.assetId && a?.type === 'image') || null
+        const asset = imageAssetById.get(entry?.assetId) || null
         if (!asset) return null
         const slug = (entry?.slug && entry.slug.trim()) || normalizeCastSlug(entry?.label || '')
         const label = (entry?.label && entry.label.trim()) || slug || 'Artist'
+        const rawAngles = entry?.angles && typeof entry.angles === 'object' ? entry.angles : {}
+        const angles = {}
+        for (const [angleSlug, angleAssetId] of Object.entries(rawAngles)) {
+          if (!isMultiAngleSlug(angleSlug)) continue
+          if (!imageAssetById.has(angleAssetId)) continue
+          angles[angleSlug] = angleAssetId
+        }
         return {
           id: String(entry.id || asset.id),
           slug: slug || normalizeCastSlug(label),
           label,
           assetId: asset.id,
           role: entry?.role || 'lead',
+          angles,
         }
       })
       .filter(Boolean)
