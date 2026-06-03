@@ -701,6 +701,32 @@ async function appendAssetToProjectFile(projectHandle, asset, folderPathSegments
   return persistedAsset
 }
 
+// Slugs for the 8 outputs of the 1_click_multiple_angles / _scene workflows.
+// Order mirrors the saveNodes map in comfyui.js#modifyMultipleAnglesWorkflow
+// so the angle can be recovered from the filename prefix returned by ComfyUI.
+const MULTI_ANGLE_SLUGS = Object.freeze([
+  'close_up',
+  'wide_shot',
+  '45_right',
+  '90_right',
+  '90_left',
+  '45_left',
+  'aerial_view',
+  'low_angle',
+])
+
+// Pulls the angle slug out of a ComfyUI image filename like
+// "ComfyStudio-close_up_00001_.png" → "close_up". Returns null if the
+// filename doesn't match one of the known multi-angle slugs.
+function extractMultiAngleSlugFromFilename(filename) {
+  const basename = String(filename || '').split(/[\\/]/).pop() || ''
+  if (!basename) return null
+  const match = basename.match(/-([a-z][a-z0-9_]+?)_\d+_/i)
+  if (!match) return null
+  const slug = match[1].toLowerCase()
+  return MULTI_ANGLE_SLUGS.includes(slug) ? slug : null
+}
+
 function getDirectorAngleShortToken(angle = '') {
   const normalized = String(angle || '').trim().toLowerCase()
   if (!normalized) return 'ANG'
@@ -10758,19 +10784,26 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         ? `KF ${String((Number(shortFilmMeta.shotIndex) || 0) + 1).padStart(2, '0')} - ${shortFilmMeta.shotTitle || 'Shot'}`
         : ''
       const peopleWizardAssetPrefix = String(job?.peopleWizard?.assetPrefix || '').trim()
+      const isMultiAngleJob = job?.workflowId === 'multi-angles' || job?.workflowId === 'multi-angles-scene'
       for (let imageIndex = 0; imageIndex < imageItems.length; imageIndex += 1) {
         const img = imageItems[imageIndex]
         if (markImportedSignature('image', img.filename, img.subfolder, img.outputType)) continue
         if (!generatedImageFolderId) {
           generatedImageFolderId = importsIntoActiveProject ? ensureAssetFolderPath(generatedImageFolderPath) : null
         }
+        const angleSlug = isMultiAngleJob ? extractMultiAngleSlugFromFilename(img.filename) : null
+        const peopleWizardMetadata = (isMultiAngleJob && angleSlug && job?.peopleWizard)
+          ? { ...job.peopleWizard, angle: angleSlug }
+          : job?.peopleWizard
         try {
           const imageFile = await comfyui.downloadImage(img.filename, img.subfolder, img.outputType)
           const assetInfo = await importAsset(targetProjectHandle, imageFile, 'images')
           const blobUrl = importsIntoActiveProject ? URL.createObjectURL(imageFile) : null
           const wizardImageName = peopleWizardAssetPrefix ? buildPeopleWizardAssetName(peopleWizardAssetPrefix, 'image', resolvedName) : ''
           const baseImageName = wizardImageName || shortFilmKeyframeName || resolvedName
-          const imageName = imageItems.length > 1 ? `${baseImageName}_I${imageIndex + 1}` : baseImageName
+          const imageName = angleSlug
+            ? `${baseImageName}_${angleSlug}`
+            : (imageItems.length > 1 ? `${baseImageName}_I${imageIndex + 1}` : baseImageName)
           const newAsset = await saveImportedAssetRecord({
             ...assetInfo,
             name: imageName,
@@ -10780,7 +10813,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             isImported: true,
             yolo: directorMeta || undefined,
             shortFilm: shortFilmMeta || undefined,
-            peopleWizard: job?.peopleWizard || undefined,
+            peopleWizard: peopleWizardMetadata,
             folderId: generatedImageFolderId,
           }, generatedImageFolderPath)
           if (newAsset) importedAssets.push(newAsset)
@@ -10791,7 +10824,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           const url = comfyui.getMediaUrl(img.filename, img.subfolder, img.outputType)
           const wizardImageName = peopleWizardAssetPrefix ? buildPeopleWizardAssetName(peopleWizardAssetPrefix, 'image', resolvedName) : ''
           const baseImageName = wizardImageName || shortFilmKeyframeName || resolvedName
-          const imageName = imageItems.length > 1 ? `${baseImageName}_I${imageIndex + 1}` : baseImageName
+          const imageName = angleSlug
+            ? `${baseImageName}_${angleSlug}`
+            : (imageItems.length > 1 ? `${baseImageName}_I${imageIndex + 1}` : baseImageName)
           const fallbackAsset = addAsset({
             name: imageName,
             type: 'image',
@@ -10799,7 +10834,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             prompt: jobPrompt,
             yolo: directorMeta || undefined,
             shortFilm: shortFilmMeta || undefined,
-            peopleWizard: job?.peopleWizard || undefined,
+            peopleWizard: peopleWizardMetadata,
             folderId: generatedImageFolderId,
           })
           if (fallbackAsset) importedAssets.push(fallbackAsset)
