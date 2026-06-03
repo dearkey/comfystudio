@@ -1,3 +1,5 @@
+import { isMultiAngleSlug, MULTI_ANGLE_SLUGS } from './multiAngle'
+
 const DEFAULT_ANGLE_PRESETS = [
   'Wide shot',
   'Medium shot',
@@ -19,6 +21,13 @@ const STRUCTURED_FIELD_PATTERNS = Object.freeze([
   { key: 'keyframePrompt', pattern: /^(?:keyframe\s*prompt|image\s*action|opening\s*frame|keyframe)\s*:\s*(.*)$/i },
   { key: 'motionPrompt', pattern: /^(?:motion\s*prompt|video\s*action|video\s*prompt|motion)\s*:\s*(.*)$/i },
   { key: 'camera', pattern: /^(?:camera|camera\s*direction|camera\s*setup)\s*:\s*(.*)$/i },
+  // Music-video-only: enum-typed camera angle that picks the matching
+  // per-cast-member reference image at keyframe time. One of:
+  // close_up, wide_shot, 45_right, 90_right, 90_left, 45_left,
+  // aerial_view, low_angle. Free-form aliases ("side view", "behind")
+  // are accepted and snapped to the closest enum value via
+  // normalizeCameraAngleAlias below; unknown values produce no angle.
+  { key: 'cameraAngle', pattern: /^(?:camera\s*angle|angle)\s*:\s*(.*)$/i },
   // `length` is a music-video-friendly alias for duration. Ad scripts still
   // write `Duration:` and both route to the same shot field, so the downstream
   // parser/normalizer doesn't need to care which was used.
@@ -152,9 +161,81 @@ function splitSceneIntoBeats(sceneText = '') {
 }
 
 function sanitizeSnippet(text = '', maxLength = 180) {
-  const compact = String(text).replace(/\s+/g, ' ').trim()
-  if (compact.length <= maxLength) return compact
-  return `${compact.slice(0, maxLength - 3)}...`
+  return text
+}
+
+// Maps free-form `Camera angle:` text the LLM (or a human) might write
+// to one of the 8 enum slugs. Returns null when no match — the shot then
+// has no structured angle and the keyframe queue falls back to the
+// cast member's primary assetId.
+const CAMERA_ANGLE_ALIASES = Object.freeze({
+  cu: 'close_up',
+  close_up: 'close_up',
+  closeup: 'close_up',
+  close: 'close_up',
+  portrait: 'close_up',
+  ws: 'wide_shot',
+  wide: 'wide_shot',
+  wide_shot: 'wide_shot',
+  establishing: 'wide_shot',
+  establish: 'wide_shot',
+  est: 'wide_shot',
+  low: 'low_angle',
+  low_angle: 'low_angle',
+  lowangle: 'low_angle',
+  from_below: 'low_angle',
+  worm: 'low_angle',
+  worm_eye: 'low_angle',
+  aerial: 'aerial_view',
+  aerial_view: 'aerial_view',
+  overhead: 'aerial_view',
+  birds_eye: 'aerial_view',
+  birdseye: 'aerial_view',
+  drone: 'aerial_view',
+  top_down: 'aerial_view',
+  '45_right': '45_right',
+  '45_deg_right': '45_right',
+  '45_degree_right': '45_right',
+  '3/4_right': '45_right',
+  three_quarter_right: '45_right',
+  threequarter_right: '45_right',
+  '45_left': '45_left',
+  '45_deg_left': '45_left',
+  '45_degree_left': '45_left',
+  '3/4_left': '45_left',
+  three_quarter_left: '45_left',
+  threequarter_left: '45_left',
+  '90_right': '90_right',
+  '90_deg_right': '90_right',
+  side_right: '90_right',
+  profile_right: '90_right',
+  right: '90_right',
+  behind: '90_right',
+  back: '90_right',
+  rear: '90_right',
+  '90_left': '90_left',
+  '90_deg_left': '90_left',
+  side_left: '90_left',
+  profile_left: '90_left',
+  left: '90_left',
+  side: '90_right',
+  profile: '90_right',
+})
+
+function normalizeCameraAngleAlias(rawValue) {
+  if (rawValue == null) return null
+  const text = String(rawValue).toLowerCase().trim()
+  if (!text) return null
+  const normalized = text
+    .replace(/[°]/g, '_deg_')
+    .replace(/[\s\-/]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+  if (!normalized) return null
+  if (isMultiAngleSlug(normalized)) return normalized
+  const aliased = CAMERA_ANGLE_ALIASES[normalized]
+  if (aliased && isMultiAngleSlug(aliased)) return aliased
+  return null
 }
 
 function extractKeyframeMoment(text = '') {
@@ -326,6 +407,10 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
     )
     const shotType = sanitizeSnippet(currentShot.shotType || currentShot.label || fallbackAngle, 90)
     const cameraDirection = sanitizeSnippet(currentShot.camera || '', 160)
+    // Camera angle: enum-typed, picks the per-cast-member reference
+    // image for the keyframe pass. Free-form text is normalized via
+    // CAMERA_ANGLE_ALIASES; null means "use cast assetId fallback".
+    const cameraAngle = normalizeCameraAngleAlias(currentShot.cameraAngle)
     const sceneCoverage = buildSceneCoverageMeta(currentScene)
     const shotCoverageType = normalizeCoverageType(
       currentShot.coverageType,
@@ -351,6 +436,11 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       cameraPresetId: 'auto',
       shotType,
       cameraDirection,
+      // Music-video-only: enum slug from "Camera angle:" line. Consumed
+      // by the keyframe queue to pick the matching per-cast-member
+      // reference image instead of the cast's single composite assetId.
+      // Null when the line is missing or doesn't match a known angle.
+      angle: cameraAngle,
       // Ad-specific commercial grammar. These are pass-through metadata for
       // prompt composition, chip UX, lip-sync routing, and native text layers.
       adBeat: sanitizeSnippet(currentShot.adBeat || '', 120),
@@ -649,6 +739,10 @@ export function flattenYoloPlanVariants(plan = []) {
       const imageBeat = String(shot?.imageBeat || shot?.beat || '').trim()
       const videoBeat = String(shot?.videoBeat || shot?.beat || '').trim()
       const cameraDirection = String(shot?.cameraDirection || '').trim()
+      // Structured camera angle from the "Camera angle:" line. null means
+      // the script didn't specify a known angle and the keyframe queue
+      // falls back to the cast member's primary assetId.
+      const shotAngle = isMultiAngleSlug(shot?.angle) ? shot.angle : null
       const adBeat = sanitizeSnippet(shot?.adBeat || '', 120)
       const productMode = sanitizeSnippet(shot?.productMode || '', 120)
       const talentMode = sanitizeSnippet(shot?.talentMode || '', 120)
@@ -720,6 +814,11 @@ export function flattenYoloPlanVariants(plan = []) {
             shotId: shot.id,
             angle,
             take,
+            // Enum-typed camera angle from "Camera angle:". Consumed by
+            // the keyframe queue to pick the matching per-cast-member
+            // reference image. Distinct from the legacy `angle` field
+            // above (which is a free-form shot type for the prompt).
+            cameraAngle: shotAngle,
             durationSeconds: shot.durationSeconds,
             prompt: sanitizeSnippet(videoPrompt, 1100),
             videoPrompt: sanitizeSnippet(videoPrompt, 1100),
