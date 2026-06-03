@@ -1416,8 +1416,22 @@ function buildMusicVideoPlanFromScript(options = {}) {
           message: `Shot ${flatShotIndex}: ${resolvedMembers.length} cast members resolved, but only two reference slots are available (${dropped.join(', ')} were dropped).`,
         })
       }
-      const slot1 = resolvedMembers[0]?.assetId || null
-      const slot2 = resolvedMembers[1]?.assetId || null
+      // Pick the per-cast-member reference image for this shot's camera
+      // angle. When the cast entry has an 'angles' map (set by the
+      // people-wizard multi-angles pass) we use the matching angle asset;
+      // otherwise we fall back to the cast entry's primary assetId so
+      // legacy cast entries keep working.
+      const shotCameraAngle = isMultiAngleSlug(scriptShot?.angle) ? scriptShot.angle : null
+      const angleAssetFor = (member) => {
+        if (!member) return null
+        if (shotCameraAngle && member.angles && isMultiAngleSlug(shotCameraAngle)) {
+          const angleAsset = member.angles[shotCameraAngle]
+          if (angleAsset) return angleAsset
+        }
+        return member.assetId || null
+      }
+      const slot1 = angleAssetFor(resolvedMembers[0])
+      const slot2 = angleAssetFor(resolvedMembers[1])
 
       const videoPrompt = composeMusicShotVideoPrompt({
         motionPromptRaw: scriptShot.motionPromptRaw || scriptShot.videoBeat,
