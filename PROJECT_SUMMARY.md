@@ -347,6 +347,8 @@ Free-form aliases (`CU`, `side`, `behind`, `45° right`) are normalized via `CAM
 
 **Optional 4×2 contact sheet:** The composite preview is no longer auto-built. Users can still create it manually from the job card ("Create Angle Sheet" button) for visual reference.
 
+**Environmental / detail b-roll:** Shots inside a coverage section whose `Coverage type:` is `environmental_broll` or `detail_broll` carry no performer in frame (per LLM brief rules 4a/4b). The keyframe queue detects this via `variant.coverage.type` and skips the cast reference entirely — `job.inputAssetId` stays null, no input image is uploaded, and the Qwen workflow's LoadImage node is left untouched. The prompt drives the render alone. `Camera angle:` is still parsed and recorded on the variant for diagnostics, but is not used to pick a person reference.
+
 ## Text Panel Features
 - Text content textarea
 - Font family dropdown (10 fonts)
