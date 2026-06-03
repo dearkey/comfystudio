@@ -1667,7 +1667,13 @@ export default function MusicVideoEasyMode({
         entryId: peopleWizard?.entryId || null,
         mode: peopleWizard?.mode || 'create',
         baseAssetId,
-        autoCreateAngleSheet: true,
+        // The composite 4x2 grid is now an optional visual preview the
+        // user can build from the job card after generation; we no
+        // longer auto-build it as part of the wizard flow. The 8
+        // individual angle images are registered as assets by the
+        // multi-angles workflow itself and the keyframe queue reads
+        // them per shot.
+        autoCreateAngleSheet: false,
         assetPrefix: inheritedAssetPrefix,
       },
     })
@@ -1681,12 +1687,6 @@ export default function MusicVideoEasyMode({
     if (!peopleWizard) return
     const trimmedName = String(peopleWizard.name || '').trim()
     const normalizedSlug = normalizeCastSlug(String(peopleWizard.slug || '').trim())
-    const finalAssetId = peopleWizard.step === 'sheet'
-      ? peopleWizardSheetAsset?.id || ''
-      : peopleWizard.step === 'image'
-        ? peopleWizardGeneratedImageAsset?.id || ''
-      : peopleWizardSelectedAsset?.id || peopleWizardSheetAsset?.id || peopleWizardGeneratedImageAsset?.id || ''
-    if (!trimmedName || !normalizedSlug || !finalAssetId) return
     // Collect any per-angle assets the wizard produced. They share the same
     // wizardId and carry a peopleWizard.angle slug set by the multi-angles
     // asset import. We group them into a map keyed by angle slug so the
@@ -1699,11 +1699,26 @@ export default function MusicVideoEasyMode({
         if (isMultiAngleSlug(angle) && asset.id) castAngles[angle] = asset.id
       }
     }
+    // The cast entry's primary assetId is the character portrait — the
+    // original selected image, the generated portrait, or the first
+    // available angle when nothing else was picked. We intentionally do
+    // NOT use the composite angle sheet here: that 4x2 grid is a visual
+    // preview only, and the per-shot keyframe queue picks from `angles`
+    // (or falls back to this assetId) when an angle is missing.
+    const portraitCandidate = (
+      peopleWizardSelectedAsset?.id
+      || peopleWizardGeneratedImageAsset?.id
+      || castAngles.close_up
+      || castAngles.wide_shot
+      || Object.values(castAngles)[0]
+      || ''
+    )
+    if (!trimmedName || !normalizedSlug || !portraitCandidate) return
     const nextEntry = {
       id: peopleWizard.entryId || `cast-${Date.now()}`,
       label: trimmedName,
       slug: normalizedSlug,
-      assetId: finalAssetId,
+      assetId: portraitCandidate,
       role: String(peopleWizard.role || 'lead'),
       // Empty object when the user never ran the multi-angles wizard;
       // keyframe queue will fall back to assetId.
@@ -2028,7 +2043,7 @@ export default function MusicVideoEasyMode({
     const wizardStages = [
       { id: 'person', label: '1', title: 'Person data', helper: 'Name, slug, and role.' },
       { id: 'image', label: '2', title: 'Image', helper: 'Create or pick a portrait.', disabled: !canContinueToImageStep },
-      { id: 'sheet', label: '3', title: 'Character sheet', helper: 'Generate the full sheet.', disabled: !canEnterSheetStep },
+      { id: 'sheet', label: '3', title: 'Angles', helper: 'Generate the 8 reference angles.', disabled: !canEnterSheetStep },
     ]
     const previewJob = peopleWizardActiveJob
       && (
@@ -2333,9 +2348,12 @@ export default function MusicVideoEasyMode({
               {wizardStep === 'sheet' && (
                 <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-900/70 p-4 space-y-3">
                   <div>
-                    <div className="text-sm font-semibold text-sf-text-primary">3. Character sheet creation</div>
+                    <div className="text-sm font-semibold text-sf-text-primary">3. Multi-angle reference generation</div>
                     <p className="mt-1 text-xs text-sf-text-secondary">
-                      Use the selected or generated image as the reference, then turn it into a multi-angle character sheet.
+                      Generates 8 camera-angle variants of the selected or generated portrait. Each
+                      angle is registered as a separate asset so the keyframe queue can pick the
+                      right one per shot. The 4×2 contact sheet is an optional preview you can
+                      build later from the job card.
                     </p>
                   </div>
                   <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-950/60 p-3 text-xs text-sf-text-secondary">
@@ -2369,7 +2387,7 @@ export default function MusicVideoEasyMode({
                       disabled={!peopleWizardGenerationEnabled || Boolean(peopleWizardActiveJob) || !canEnterSheetStep}
                       className="rounded-lg bg-sf-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {peopleWizardActiveJob && peopleWizardActiveJob.workflowId === 'multi-angles' ? 'Generating…' : 'Generate sheet'}
+                      {peopleWizardActiveJob && peopleWizardActiveJob.workflowId === 'multi-angles' ? 'Generating…' : 'Generate angles'}
                     </button>
                   </div>
                 </div>
