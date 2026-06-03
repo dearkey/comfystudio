@@ -1,4 +1,4 @@
-import { isMultiAngleSlug, MULTI_ANGLE_SLUGS } from './multiAngle'
+import { isMultiAngleSlug, MULTI_ANGLE_SLUGS } from './multiAngle.js'
 
 const DEFAULT_ANGLE_PRESETS = [
   'Wide shot',
