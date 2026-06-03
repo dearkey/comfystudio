@@ -24,7 +24,10 @@ export function isMultiAngleSlug(value) {
 export function extractMultiAngleSlugFromFilename(filename) {
   const basename = String(filename || '').split(/[\\/]/).pop() || ''
   if (!basename) return null
-  const match = basename.match(/-([a-z][a-z0-9_]+?)_\d+_/i)
+  // Slug may start with a digit (e.g. "45_right", "90_left"), so the
+  // first char class allows letters or digits. The lazy quantifier
+  // stops at the next "_<counter>_" boundary ComfyUI always emits.
+  const match = basename.match(/-([a-z0-9][a-z0-9_]+?)_\d+_/i)
   if (!match) return null
   const slug = match[1].toLowerCase()
   return isMultiAngleSlug(slug) ? slug : null
