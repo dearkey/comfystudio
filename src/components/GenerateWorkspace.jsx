@@ -127,7 +127,7 @@ import {
   SHORT_FILM_KEYFRAME_WORKFLOW_OPTIONS,
   SHORT_FILM_VIDEO_WORKFLOW_ID,
 } from '../config/shortFilmConfig'
-import { extractMultiAngleSlugFromFilename, isMultiAngleSlug } from '../utils/multiAngle'
+import { extractMultiAngleSlugFromFilename, isMultiAngleSlug, MULTI_ANGLE_SLUGS } from '../utils/multiAngle'
 
 const CATEGORY_ICONS = { video: Video, image: ImageIcon, audio: Music }
 const DIRECTOR_SUBTABS = [
@@ -1953,6 +1953,13 @@ function buildMusicVideoLLMPrompt(options = {}) {
       }
       castBlock.push('For duets, use "Artist: slug1, slug2". For the full cast, use "Artist: all".')
       sections.push(castBlock.join('\n'))
+      // Available camera angles — the planner parses "Camera angle:" into
+      // a structured enum that the keyframe queue uses to pick the right
+      // per-cast-member reference image. Listing the exact values here
+      // stops the LLM from inventing synonyms we don't recognise.
+      sections.push(
+        `Available camera angles (use one of these exact values in the "Camera angle:" field):\n${MULTI_ANGLE_SLUGS.map((s) => `  - ${s}`).join('\n')}`
+      )
     } else {
       sections.push('Cast: (no cast defined — you may omit the Artist: field entirely, or use "Artist: artist" as a generic slot).')
     }
@@ -2006,6 +2013,7 @@ function buildMusicVideoLLMPrompt(options = {}) {
     '  8. "Motion prompt:" describes what moves in the clip: lip-sync/performance action, character movement, camera movement, atmosphere, and any story action. Include camera motion and character blocking/emotion, not just a static description.',
     '  9. Keep wardrobe, location, and lighting consistent across adjacent shots unless the script deliberately calls for a hard cut.',
     '  10. Do NOT invent lyrics. If the song is instrumental at a given moment, omit Lyric moment for that shot.',
+    '  11. Every performance / performance_wide shot that has a visible cast member MUST include "Camera angle:" with one of the values listed above (close_up, wide_shot, 45_right, 90_right, 90_left, 45_left, aerial_view, low_angle). This picks the matching reference image we have on file for that cast member, so the keyframe shows the character from the requested angle instead of always front-facing. Omit Camera angle for b_roll shots without a visible performer.',
   ]
   sections.push(rules.join('\n'))
 
@@ -2534,6 +2542,7 @@ function buildMusicVideoPassFormatSpec(pass, coveragePlan = null) {
     'Lyric moment: "You paint your eyelids with correction fluid moons"',
     'Shot type: performance_wide',
     'Artist: rose',
+    'Camera angle: wide_shot',
     'Keyframe prompt: Singer leans against a neon-lit phone booth, rain-slick street behind her, warm sodium-lamp glow.',
     'Motion prompt: Slow push-in on the singer as she mouths the opening line, rain falling around her, headlights flaring in the distance.',
     'Camera: Slow dolly forward, eye level, 35mm lens.',
@@ -2544,6 +2553,7 @@ function buildMusicVideoPassFormatSpec(pass, coveragePlan = null) {
     'Lyric moment: "Chewed up saints on the floor"',
     'Shot type: performance',
     'Artist: rose',
+    'Camera angle: close_up',
     'Keyframe prompt: Tight close-up on the singer\'s eyes, mascara starting to run.',
     'Motion prompt: Hold on her face as she sings, slight tilt down to catch a tear.',
     'Camera: Handheld, 85mm, shallow depth of field.',
