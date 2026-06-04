@@ -30,7 +30,7 @@ import {
   getMusicVideoShotTypeOption,
   normalizeCastSlug,
 } from '../../config/musicVideoShotConfig'
-import { isMultiAngleSlug } from '../../utils/multiAngle'
+import { isMultiAngleSlug, MULTI_ANGLE_LABELS } from '../../utils/multiAngle'
 import {
   getWorkflowDisplayLabel,
 } from '../../config/generateWorkspaceConfig'
@@ -319,6 +319,97 @@ function buildActualImageResolutionParts(asset, runtimeImageDimensions, requeste
 
 function getAssetUrl(asset) {
   return asset?.url || asset?.thumbnailUrl || asset?.proxyUrl || asset?.path || ''
+}
+
+// Collects the image variants a keyframe preview can show: the rendered
+// output, the multi-angle composite sheet (if the user built one), and
+// the per-camera-angle input image (the single angle that the keyframe
+// queue picked for this shot). The list can have 1–3 entries depending
+// on what the cast entry + assets actually carry.
+function buildKeyframePreviewViews({
+  variant,
+  castMembers,
+  assets,
+  renderedKeyframeAsset,
+  coverageLabel,
+  coverageType,
+}) {
+  const views = []
+  // Output first — always present when the keyframe has been generated.
+  if (renderedKeyframeAsset) {
+    views.push({
+      id: 'output',
+      label: 'Output',
+      url: getAssetUrl(renderedKeyframeAsset),
+      hint: 'Rendered keyframe',
+    })
+  }
+  // Find the primary cast member for this shot so we can look up the
+  // angle and composite assets. resolvedArtistAssetIds is the ordered
+  // list of cast asset ids the planner resolved for the shot.
+  const resolvedIds = Array.isArray(variant?.resolvedArtistAssetIds)
+    ? variant.resolvedArtistAssetIds.filter(Boolean)
+    : []
+  const primaryCast = (castMembers || []).find((member) => (
+    member && resolvedIds.includes(member.assetId)
+  )) || null
+  const primaryCastFromAngle = !primaryCast
+    ? (castMembers || []).find((member) => {
+        if (!member?.angles) return false
+        return Object.values(member.angles).some((id) => resolvedIds.includes(id))
+      }) || null
+    : null
+  const cast = primaryCast || primaryCastFromAngle
+  if (cast) {
+    // Per-angle input image: the specific angle the queue picked for
+    // this shot (if Camera angle: was set) or the cast's primary
+    // assetId as the legacy fallback.
+    const shotAngle = isMultiAngleSlug(variant?.cameraAngle) ? variant.cameraAngle : null
+    const angleAssetId = shotAngle && cast.angles?.[shotAngle]
+      ? cast.angles[shotAngle]
+      : cast.assetId
+    const angleAsset = angleAssetId
+      ? (assets || []).find((a) => a?.id === angleAssetId)
+      : null
+    if (angleAsset) {
+      views.push({
+        id: 'angle',
+        label: shotAngle
+          ? `Winkel: ${MULTI_ANGLE_LABELS[shotAngle] || shotAngle}`
+          : 'Winkel: Portrait',
+        url: getAssetUrl(angleAsset),
+        hint: shotAngle
+          ? `Eingabe-Bild für ${shotAngle}`
+          : 'Cast-Portrait (kein Winkel gewählt)',
+      })
+    }
+    // Multi-angle composite: any of the angle assets carries the
+    // wizardId; the composite lives in the same wizard session with
+    // stage === 'sheet'.
+    const anyAngleId = Object.values(cast.angles || {}).find(Boolean)
+    if (anyAngleId) {
+      const anyAngleAsset = (assets || []).find((a) => a?.id === anyAngleId)
+      const wizardId = anyAngleAsset?.peopleWizard?.wizardId
+      if (wizardId) {
+        const compositeAsset = (assets || []).find((a) => (
+          a?.peopleWizard?.wizardId === wizardId
+          && a?.peopleWizard?.stage === 'sheet'
+        ))
+        if (compositeAsset) {
+          views.push({
+            id: 'multi',
+            label: 'Multi-Winkel',
+            url: getAssetUrl(compositeAsset),
+            hint: '4×2 Kontaktbogen aller 8 Winkel',
+          })
+        }
+      }
+    }
+  } else if (coverageType === 'environmental_broll' || coverageType === 'detail_broll') {
+    // B-roll without performer — there's no character input image by
+    // design. The Output tab stays, the others are absent.
+  }
+  return views
 }
 
 function ShotVideoPreview({ hasVideo, keyframeUrl, placeholderLabel = "Needs keyframe" }) {
@@ -2982,6 +3073,15 @@ export default function MusicVideoEasyMode({
                     )}
                     {url && renderPreviewButton(() => {
                       setSelectedShotIndex(index)
+                      const previewViews = buildKeyframePreviewViews({
+                        variant,
+                        castMembers: yoloMusicResolvedCast,
+                        assets,
+                        renderedKeyframeAsset: asset,
+                        coverageLabel,
+                        coverageType: String(variant?.coverage?.type || ''),
+                      })
+                      const firstViewId = previewViews[0]?.id || null
                       setMediaPreview({
                         kind: 'image',
                         url,
@@ -2992,6 +3092,8 @@ export default function MusicVideoEasyMode({
                         sceneId: scene.id,
                         shotId: shot.id,
                         shotIndex: index,
+                        views: previewViews,
+                        activeViewId: firstViewId,
                       })
                     })}
                   </div>
@@ -3529,6 +3631,18 @@ export default function MusicVideoEasyMode({
     const previewWorkflowLabel = editableKeyframePrompt ? selectedKeyframeWorkflowLabel : selectedVideoWorkflowLabel
     const previewStatusSetter = editableKeyframePrompt ? setKeyframeStatus : setVideoStatus
     const previewCopiedMessage = `Shot ${previewShotIndex + 1} ${editableKeyframePrompt ? 'keyframe' : 'video'} prompt copied.`
+    // Per-shot keyframe preview tab strip. When the cast entry has a
+    // multi-angle sheet, the user can switch the preview between the
+    // rendered keyframe, the per-angle input image, and the contact
+    // sheet. Tabs that aren't available are simply not rendered.
+    const previewViews = Array.isArray(mediaPreview.views) ? mediaPreview.views : null
+    const activeView = previewViews && previewViews.length > 0
+      ? (previewViews.find((view) => view.id === mediaPreview.activeViewId) || previewViews[0])
+      : null
+    const displayedUrl = activeView?.url || mediaPreview.url
+    const setActiveViewId = (viewId) => {
+      setMediaPreview((current) => (current ? { ...current, activeViewId: viewId } : current))
+    }
 
     return (
       <div
@@ -3560,11 +3674,34 @@ export default function MusicVideoEasyMode({
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {previewViews && previewViews.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1 border-b border-sf-dark-700 bg-sf-dark-900/70 px-4 py-2">
+                <span className="mr-1 text-[10px] uppercase tracking-wider text-sf-text-muted">Ansicht</span>
+                {previewViews.map((view) => {
+                  const isActive = view.id === activeView?.id
+                  return (
+                    <button
+                      key={view.id}
+                      type="button"
+                      onClick={() => setActiveViewId(view.id)}
+                      title={view.hint || view.label}
+                      className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors ${
+                        isActive
+                          ? 'border-sf-accent bg-sf-accent/20 text-sf-text-primary'
+                          : 'border-sf-dark-600 bg-sf-dark-900/85 text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary'
+                      }`}
+                    >
+                      {view.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <div className="flex max-h-[72vh] items-center justify-center bg-black">
               {mediaPreview.kind === 'video' ? (
                 <video
-                  key={mediaPreview.url}
-                  src={mediaPreview.url}
+                  key={displayedUrl}
+                  src={displayedUrl}
                   className="max-h-[72vh] max-w-full object-contain"
                   controls
                   autoPlay
@@ -3572,8 +3709,9 @@ export default function MusicVideoEasyMode({
                 />
               ) : (
                 <img
-                  src={mediaPreview.url}
-                  alt={mediaPreview.title || 'Preview'}
+                  key={activeView?.id || 'preview'}
+                  src={displayedUrl}
+                  alt={activeView?.hint || mediaPreview.title || 'Preview'}
                   className="max-h-[72vh] max-w-full object-contain"
                 />
               )}

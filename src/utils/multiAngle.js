@@ -37,3 +37,16 @@ export function extractMultiAngleSlugFromFilename(filename) {
 // have no per-angle map (legacy data, or a user that never generated a
 // multi-angle sheet).
 export const MULTI_ANGLE_DEFAULT_SLUG = 'close_up'
+
+// Human-readable labels for the 8 angles. Used by the keyframe preview
+// UI to label the per-angle view tab.
+export const MULTI_ANGLE_LABELS = Object.freeze({
+  close_up: 'Close-up',
+  wide_shot: 'Wide shot',
+  '45_right': '45° right',
+  '90_right': '90° right',
+  '90_left': '90° left',
+  '45_left': '45° left',
+  aerial_view: 'Aerial',
+  low_angle: 'Low angle',
+})
