@@ -12648,6 +12648,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleYoloShotVideoBeatChange={handleYoloShotVideoBeatChange}
                     handleYoloShotTakesChange={handleYoloShotTakesChange}
                     handleAssembleAdTimeline={handleAssembleAdTimeline}
+                    yoloMusicNegativePrompt={negativePrompt}
                   />
                 ) : isYoloMusicMode ? (
                   <MusicVideoEasyMode

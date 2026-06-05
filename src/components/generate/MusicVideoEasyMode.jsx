@@ -647,6 +647,7 @@ export default function MusicVideoEasyMode({
   setYoloVideoFps,
   setResolution,
   setImageResolution,
+  yoloMusicNegativePrompt = '',
 }) {
   const draftStorageKey = useMemo(() => getDraftStorageKey(draftStorageScope), [draftStorageScope])
   const initialDraft = useMemo(() => loadDraft(draftStorageKey), [draftStorageKey])
@@ -3778,6 +3779,32 @@ export default function MusicVideoEasyMode({
                   className="mt-2 w-full resize-y rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs leading-5 text-sf-text-primary outline-none focus:border-sf-accent"
                 />
                 {editableKeyframePrompt && previewShotRow ? renderNanoBananaShotReferences(previewShotRow, true) : null}
+                {yoloMusicNegativePrompt ? (
+                  <div className="mt-3 flex flex-col gap-1.5 border-t border-sf-dark-700 pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Negative prompt (project setting)</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleCopyShotPrompt(
+                            yoloMusicNegativePrompt,
+                            'Negative prompt copied.',
+                            previewStatusSetter
+                          )
+                        }}
+                        disabled={!yoloMusicNegativePrompt.trim()}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sf-dark-600 bg-sf-dark-900/85 px-2 py-1 text-[10px] font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Copy negative prompt"
+                      >
+                        <Clipboard className="h-3 w-3" />
+                        Copy
+                      </button>
+                    </div>
+                    <div className="max-h-24 overflow-y-auto rounded-md border border-sf-dark-700 bg-sf-dark-950 px-3 py-2 text-[11px] leading-5 text-sf-text-secondary">
+                      {yoloMusicNegativePrompt}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : previewPrompt ? (
               <div className="border-t border-sf-dark-700 px-4 py-3 text-xs leading-5 text-sf-text-secondary">
