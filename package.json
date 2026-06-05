@@ -17,6 +17,7 @@
     "electron:pack": "npm run build && electron-builder --dir",
     "angles:sheet": "node ./scripts/build-angle-sheet.mjs",
     "test:multi-angle": "node ./scripts/test-multi-angle.mjs",
+    "test:qwen-negative-prompt": "node ./scripts/test-qwen-negative-prompt.mjs",
     "starter-pack:build": "node ./scripts/build-workflow-starter-pack.mjs",
     "starter-pack:package": "npm run starter-pack:build && node ./scripts/package-workflow-starter-pack.mjs"
   },

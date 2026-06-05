@@ -11611,6 +11611,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         case 'image-edit-model-product':
           modifiedWorkflow = modifyQwenImageEdit2509Workflow(workflowJson, {
             prompt: job.prompt,
+            negativePrompt: job.negativePrompt,
             inputImage: uploadedFilename,
             seed: job.seed,
             width: job.resolution?.width,
@@ -11622,6 +11623,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         case CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID:
           modifiedWorkflow = modifyCustomKeyframeWorkflow(workflowJson, {
             prompt: job.prompt,
+            negativePrompt: job.negativePrompt,
             inputImage: uploadedFilename,
             seed: job.seed,
             width: job.resolution?.width,

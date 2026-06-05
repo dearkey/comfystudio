@@ -7,17 +7,17 @@ import {
   getLocalComfyHttpBaseSync,
   getLocalComfyWsBaseSync,
   hydrateLocalComfyConnection,
-} from './localComfyConnection'
+} from './localComfyConnection.js'
 import {
   isInsufficientCreditsError,
   notifyComfyPartnerCreditsLow,
-} from './comfyPartnerAuth'
-import { extractCreditCountFromText } from '../utils/comfyCredits'
+} from './comfyPartnerAuth.js'
+import { extractCreditCountFromText } from '../utils/comfyCredits.js'
 import {
   MUSIC_VIDEO_SHOT_DEFAULTS,
   getMusicVideoShotTypeOption,
   normalizeMusicVideoShot,
-} from '../config/musicVideoShotConfig'
+} from '../config/musicVideoShotConfig.js'
 
 const COMFY_ORG_API_KEY_SETTING_KEY = 'comfyApiKeyComfyOrg';
 const COMFY_ORG_API_KEY_LOCAL_KEY = 'comfystudio-comfy-api-key';
@@ -1771,6 +1771,7 @@ export function modifyCustomVideoWorkflow(workflow, options = {}) {
 export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
   const {
     prompt = 'edit the image',
+    negativePrompt = '',
     inputImage = '',
     seed = Math.floor(Math.random() * 1000000000000),
     width = null,
@@ -1780,6 +1781,24 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
   } = options
 
   const modified = JSON.parse(JSON.stringify(workflow))
+  // Identify the negative-prompt encoder node by walking the
+  // KSampler's "negative" input. The workflow is structured as
+  // KSampler.negative → ["<nodeId>", <outputIndex>] (a 2-tuple link)
+  // and that node is the one carrying the negative text. If the
+  // workflow doesn't follow that convention we fall back to "no
+  // special handling" and the positive loop below will overwrite
+  // every prompt field — same broken behavior as before, but only
+  // for non-conforming workflows.
+  let negativePromptNodeId = null
+  for (const node of Object.values(modified)) {
+    if (!node || typeof node !== 'object') continue
+    if (node.class_type !== 'KSampler' && !/sampler/i.test(String(node.class_type || ''))) continue
+    const negInput = node.inputs?.negative
+    if (Array.isArray(negInput) && typeof negInput[0] === 'string' && negInput[0]) {
+      negativePromptNodeId = negInput[0]
+      break
+    }
+  }
   if (Number(width) > 0 && Number(height) > 0) {
     addQwenImageEditResolutionControls(modified, { width, height })
   }
@@ -1797,7 +1816,7 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
     return /load\s*product/i.test(title)
   })
 
-  for (const node of Object.values(modified)) {
+  for (const [nodeId, node] of Object.entries(modified)) {
     if (!node || typeof node !== 'object') continue
     const title = (node._meta && node._meta.title) ? String(node._meta.title) : ''
     const cls = node.class_type || ''
@@ -1823,8 +1842,15 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
         node.inputs.image = inputImage
       }
     }
-    // Text prompt: node with string/prompt/text or value (only if node looks like a prompt node)
-    if (node.inputs) {
+    // Text prompt: only assign to the positive-prompt encoder, not the
+    // negative one. The Qwen Image Edit 2509 workflow has two
+    // TextEncodeQwenImageEditPlus nodes wired into KSampler.positive /
+    // .negative — both have inputs.prompt, so a blanket "set every
+    // prompt field" would clobber the negative slot with the positive
+    // text and silently disable the negative prompt. We pick the
+    // negative node by walking the KSampler's negative input (computed
+    // below) and excluding it here.
+    if (node.inputs && nodeId !== negativePromptNodeId) {
       const key = ['prompt', 'text', 'string'].find(k => k in node.inputs)
       const valueKey = (key === undefined && 'value' in node.inputs && (title.includes('Prompt') || cls.includes('Prompt'))) ? 'value' : null
       if (key) node.inputs[key] = prompt
@@ -1848,6 +1874,17 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
       node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/ComfyStudio_edit'
     }
   }
+  // Second pass: write the negative prompt into the negative-prompt
+  // encoder node that the KSampler is wired to. We do this in a
+  // separate pass so the positive-prompt loop above doesn't need to
+  // carry the negativePromptNodeId flag.
+  if (negativePromptNodeId && negativePrompt && modified[negativePromptNodeId]) {
+    const negNode = modified[negativePromptNodeId]
+    if (negNode && negNode.inputs) {
+      const key = ['prompt', 'text', 'string'].find(k => k in negNode.inputs)
+      if (key) negNode.inputs[key] = negativePrompt
+    }
+  }
 
   // Optional reference images: default qwen-edit workflows wire refs into image2/image3.
   // Dedicated model/product workflows already consume refs via their own loader nodes.
@@ -1868,7 +1905,7 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
     }
     // Wire refs into node that accepts them (e.g. TextEncodeQwenImageEditPlus).
     // Export often omits image2/image3 when unconnected, so set them if we have refs.
-    for (const node of Object.values(modified)) {
+  for (const [nodeId, node] of Object.entries(modified)) {
       if (!node?.inputs) continue
       const hasImage1 = 'image1' in node.inputs
       const isQwenEdit = (node.class_type === 'TextEncodeQwenImageEditPlus') || ((node._meta?.title || '').includes('Image Edit') && hasImage1)
