@@ -12729,6 +12729,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     setYoloVideoFps={setYoloVideoFps}
                     setResolution={setResolution}
                     setImageResolution={setImageResolution}
+                    yoloMusicNegativePrompt={negativePrompt}
+                    setYoloMusicNegativePrompt={setNegativePrompt}
                   />
                 ) : isYoloShortFilmMode ? (
                   <ShortFilmEasyMode
