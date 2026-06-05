@@ -648,6 +648,7 @@ export default function MusicVideoEasyMode({
   setResolution,
   setImageResolution,
   yoloMusicNegativePrompt = '',
+  setYoloMusicNegativePrompt = null,
 }) {
   const draftStorageKey = useMemo(() => getDraftStorageKey(draftStorageScope), [draftStorageScope])
   const initialDraft = useMemo(() => loadDraft(draftStorageKey), [draftStorageKey])
@@ -3644,6 +3645,27 @@ export default function MusicVideoEasyMode({
     const setActiveViewId = (viewId) => {
       setMediaPreview((current) => (current ? { ...current, activeViewId: viewId } : current))
     }
+    // Local draft for the negative-prompt editor in the preview modal.
+    // We don't want every keystroke to overwrite the project setting,
+    // so the user gets a textarea + an Apply button that commits the
+    // value back to the project-level yoloMusicNegativePrompt via the
+    // setter that GenerateWorkspace passes down. Reset to the project
+    // value when the modal opens (activeViewId change resets draft).
+    const negativePromptDraft = String(mediaPreview?.negativePromptDraft ?? yoloMusicNegativePrompt ?? '')
+    const negativePromptDirty = negativePromptDraft !== String(yoloMusicNegativePrompt ?? '')
+    const setNegativePromptDraft = (next) => {
+      setMediaPreview((current) => (current ? { ...current, negativePromptDraft: next } : current))
+    }
+    const applyNegativePrompt = () => {
+      if (!setYoloMusicNegativePrompt) return
+      setYoloMusicNegativePrompt(negativePromptDraft)
+      setKeyframeStatus(negativePromptDirty
+        ? 'Negative prompt updated. Re-queue keyframes to apply.'
+        : 'Negative prompt is unchanged.')
+    }
+    const resetNegativePrompt = () => {
+      setNegativePromptDraft(String(yoloMusicNegativePrompt || ''))
+    }
 
     return (
       <div
@@ -3779,32 +3801,61 @@ export default function MusicVideoEasyMode({
                   className="mt-2 w-full resize-y rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs leading-5 text-sf-text-primary outline-none focus:border-sf-accent"
                 />
                 {editableKeyframePrompt && previewShotRow ? renderNanoBananaShotReferences(previewShotRow, true) : null}
-                {yoloMusicNegativePrompt ? (
-                  <div className="mt-3 flex flex-col gap-1.5 border-t border-sf-dark-700 pt-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Negative prompt (project setting)</span>
+                <div className="mt-3 flex flex-col gap-1.5 border-t border-sf-dark-700 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">
+                      Negative prompt (project setting)
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={resetNegativePrompt}
+                        disabled={!negativePromptDirty}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sf-dark-600 bg-sf-dark-900/85 px-2 py-1 text-[10px] font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Reset to current project value"
+                      >
+                        Reset
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
                           void handleCopyShotPrompt(
-                            yoloMusicNegativePrompt,
+                            negativePromptDraft,
                             'Negative prompt copied.',
                             previewStatusSetter
                           )
                         }}
-                        disabled={!yoloMusicNegativePrompt.trim()}
+                        disabled={!negativePromptDraft.trim()}
                         className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sf-dark-600 bg-sf-dark-900/85 px-2 py-1 text-[10px] font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                         title="Copy negative prompt"
                       >
                         <Clipboard className="h-3 w-3" />
                         Copy
                       </button>
-                    </div>
-                    <div className="max-h-24 overflow-y-auto rounded-md border border-sf-dark-700 bg-sf-dark-950 px-3 py-2 text-[11px] leading-5 text-sf-text-secondary">
-                      {yoloMusicNegativePrompt}
+                      <button
+                        type="button"
+                        onClick={applyNegativePrompt}
+                        disabled={!setYoloMusicNegativePrompt || !negativePromptDirty}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sf-accent/50 bg-sf-accent/10 px-2 py-1 text-[10px] font-semibold text-sf-accent transition-colors hover:bg-sf-accent/20 disabled:cursor-not-allowed disabled:border-sf-dark-600 disabled:bg-sf-dark-900/60 disabled:text-sf-text-muted"
+                        title="Apply changes to the project setting (re-queue keyframes to take effect)"
+                      >
+                        {negativePromptDirty ? 'Apply' : 'Applied'}
+                      </button>
                     </div>
                   </div>
-                ) : null}
+                  <textarea
+                    value={negativePromptDraft}
+                    onChange={(event) => setNegativePromptDraft(event.target.value)}
+                    placeholder="(no negative prompt set — everything is allowed)"
+                    rows={3}
+                    className="w-full resize-y rounded-md border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-[11px] leading-5 text-sf-text-primary outline-none focus:border-sf-accent"
+                  />
+                  {negativePromptDirty ? (
+                    <div className="text-[10px] text-amber-300">
+                      Draft is unsaved. Click Apply to overwrite the project setting.
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : previewPrompt ? (
               <div className="border-t border-sf-dark-700 px-4 py-3 text-xs leading-5 text-sf-text-secondary">
