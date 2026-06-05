@@ -3661,7 +3661,7 @@ export default function MusicVideoEasyMode({
       setYoloMusicNegativePrompt(negativePromptDraft)
       setKeyframeStatus(negativePromptDirty
         ? 'Negative prompt updated. Re-queue keyframes to apply.'
-        : 'Negative prompt is unchanged.')
+        : 'Negative prompt is already up to date.')
     }
     const resetNegativePrompt = () => {
       setNegativePromptDraft(String(yoloMusicNegativePrompt || ''))
@@ -3835,11 +3835,17 @@ export default function MusicVideoEasyMode({
                       <button
                         type="button"
                         onClick={applyNegativePrompt}
-                        disabled={!setYoloMusicNegativePrompt || !negativePromptDirty}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sf-accent/50 bg-sf-accent/10 px-2 py-1 text-[10px] font-semibold text-sf-accent transition-colors hover:bg-sf-accent/20 disabled:cursor-not-allowed disabled:border-sf-dark-600 disabled:bg-sf-dark-900/60 disabled:text-sf-text-muted"
-                        title="Apply changes to the project setting (re-queue keyframes to take effect)"
+                        disabled={!setYoloMusicNegativePrompt}
+                        className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors disabled:cursor-not-allowed disabled:border-sf-dark-600 disabled:bg-sf-dark-900/60 disabled:text-sf-text-muted ${
+                          negativePromptDirty
+                            ? 'border-sf-accent/50 bg-sf-accent/10 text-sf-accent hover:bg-sf-accent/20'
+                            : 'border-sf-dark-600 bg-sf-dark-900/85 text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary'
+                        }`}
+                        title={negativePromptDirty
+                          ? 'Apply changes to the project setting (re-queue keyframes to take effect)'
+                          : 'No changes — already matches the project setting'}
                       >
-                        {negativePromptDirty ? 'Apply' : 'Applied'}
+                        Apply
                       </button>
                     </div>
                   </div>
